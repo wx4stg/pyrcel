@@ -21,7 +21,7 @@ class BaseDistribution(metaclass=ABCMeta):
 
     @abstractmethod
     def pdf(self, x):
-        """Probability density function."""
+        """Distribution density function."""
 
     @property
     @abstractmethod
@@ -58,8 +58,6 @@ class Lognorm(BaseDistribution):
         Geometric standard deviation, unitless.
     N : float, optional (default=1.0)
         Total number concentration, concentration unit.
-    base : float, optional (default=np.e)
-        Base of logarithm in lognormal distribution.
 
     Attributes
     ----------
@@ -69,9 +67,13 @@ class Lognorm(BaseDistribution):
     Methods
     -------
     pdf(x)
-        Evaluate distribution at a particular value
+        Evaluate size distribution density dN/dx (not logarithmic) at a particular radius x
+    pdfloge(x)
+        Evaluate size distribution logarithmic density dN/dln(x) at a particular radius x
+    pdflog10(x)
+        Evaluate size distribution logarithmic density dN/dlog(x) at a particular radius x
     cdf(x)
-        Evaluate cumulative distribution at a particular value.
+        Evaluate cumulative concentration up to a particular radius x
     moment(k)
         Compute the *k*-th moment of the lognormal distribution.
 
@@ -82,14 +84,8 @@ class Lognorm(BaseDistribution):
         self.sigma = sigma
         self.N = N
 
-        self.base = base
-        if self.base == np.e:
-            self.log = np.log
-        elif self.base == 10.0:
-            self.log = np.log10
-        else:
-            self.log_base = np.log(self.base)
-            self.log = lambda x: np.log(x) / self.log_base
+        self.base = np.e
+        self.log = np.log
 
         # Compute moments
         self.median = self.mu
@@ -105,7 +101,7 @@ class Lognorm(BaseDistribution):
 
         Returns
         -------
-        value of ordinate corresponding to given CDF evaluation
+        radius (same unit as mu) corresponding to given CDF value
 
         """
 
@@ -119,40 +115,80 @@ class Lognorm(BaseDistribution):
         """Cumulative density function
 
         .. math::
-            \\text{CDF} = \\frac{N}{2}\\left(1.0 + \\text{erf}(\\frac{\log{x/\mu}}{\sqrt{2}\log{\sigma}}) \\right)
+            \\text{CDF} = \\frac{N}{2}\\left(1.0 + \\text{erf}(\\frac{\ln(x/\mu)}{\sqrt{2}\ln{\sigma}}) \\right)
 
         Parameters
         ----------
         x : float
-            Ordinate value to evaluate CDF at
+            Radius (must match unit of mu)
 
         Returns
         -------
-        value of CDF at ordinate
+        cumulative concentration up to radius x
 
         """
-        erf_arg = (self.log(x / self.mu)) / (np.sqrt(2.0) * self.log(self.sigma))
+        erf_arg = (np.log(x / self.mu)) / (np.sqrt(2.0) * np.log(self.sigma))
         return (self.N / 2.0) * (1.0 + erf(erf_arg))
 
     def pdf(self, x):
-        """Probability density function
+        """Distribution density function dN/dx (not logarithmic)
 
         .. math::
-            \\text{PDF} = \\frac{N}{\sqrt{2\pi}\log\sigma x}\exp\\left( -\\frac{\log{x/\mu}^2}{2\log^2\sigma} \\right)
+            \\text{pdf} = \\frac{N}{\sqrt{2\pi}\ln(\sigma) x}\exp\\left( -\\frac{\ln^2(x/\mu)}{2\ln^2\sigma} \\right)
 
         Parameters
         ----------
         x : float
-            Ordinate value to evaluate CDF at
+            Radius (must match unit of mu)
 
         Returns
         -------
-        value of CDF at ordinate
+        distribution density value at radius x
 
         """
-        scaling = self.N / (np.sqrt(2.0 * np.pi) * self.log(self.sigma))
-        exponent = ((self.log(x / self.mu)) ** 2) / (2.0 * (self.log(self.sigma)) ** 2)
+        scaling = self.N / (np.sqrt(2.0 * np.pi) * np.log(self.sigma))
+        exponent = ((np.log(x / self.mu)) ** 2) / (2.0 * (np.log(self.sigma)) ** 2)
         return (scaling / x) * np.exp(-exponent)
+
+    def pdfloge(self, x):
+        """Distribution density function dN/dln(x) (natural logarithm)
+
+        .. math::
+            \\text{pdf} = \\frac{N}{\sqrt{2\pi}\ln\sigma}\exp\\left( -\\frac{\ln^2(x/\mu)}{2\ln^2\sigma} \\right)
+
+        Parameters
+        ----------
+        x : float
+            Radius (must match unit of mu)
+
+        Returns
+        -------
+        distribution logarithmic density value at radius x
+
+        """
+        scaling = self.N / (np.sqrt(2.0 * np.pi) * np.log(self.sigma))
+        exponent = ((np.log(x / self.mu)) ** 2) / (2.0 * (np.log(self.sigma)) ** 2)
+        return scaling * np.exp(-exponent)
+
+    def pdflog10(self, x):
+        """Distribution density function dN/dlog(x) (base 10 logarithm)
+
+        .. math::
+            \\text{pdf} = \\frac{N\ln 10}{\sqrt{2\pi}\ln\sigma}\exp\\left( -\\frac{\ln^2(x/\mu)}{2\ln^2\sigma} \\right)
+
+        Parameters
+        ----------
+        x : float
+            Radius (must match unit of mu)
+
+        Returns
+        -------
+        distribution logarithmic density value at radius x
+
+        """
+        scaling = self.N / (np.sqrt(2.0 * np.pi) * np.log(self.sigma))
+        exponent = ((np.log(x / self.mu)) ** 2) / (2.0 * (np.log(self.sigma)) ** 2)
+        return np.log(10) * scaling * np.exp(-exponent)
 
     def moment(self, k):
         """Compute the k-th moment of the lognormal distribution
@@ -171,7 +207,7 @@ class Lognorm(BaseDistribution):
 
         """
         scaling = (self.mu**k) * self.N
-        exponent = ((k**2) / 2.0) * (self.log(self.sigma)) ** 2
+        exponent = ((k**2) / 2.0) * (np.log(self.sigma)) ** 2
         return scaling * np.exp(exponent)
 
     def stats(self):
@@ -186,7 +222,7 @@ class Lognorm(BaseDistribution):
 
         """
         stats_dict = dict()
-        stats_dict["mean_radius"] = self.mu * np.exp(0.5 * self.sigma**2)
+        stats_dict["mean_radius"] = self.mu * np.exp(0.5 * (np.log(self.sigma))**2)
 
         stats_dict["total_diameter"] = self.N * stats_dict["mean_radius"]
         stats_dict["total_surface_area"] = 4.0 * np.pi * self.moment(2.0)
@@ -222,11 +258,11 @@ class MultiModeLognorm(BaseDistribution):
 
         self.mus, self.sigmas, self.Ns = list(zip(*dist_params))
 
-        self.base = base
+        self.base = np.e
 
         self.lognorms = []
         for mu, sigma, N in zip(self.mus, self.sigmas, self.Ns):
-            mode_dist = Lognorm(mu, sigma, N, base)
+            mode_dist = Lognorm(mu, sigma, N)
             self.lognorms.append(mode_dist)
 
     def cdf(self, x):
@@ -301,36 +337,30 @@ jaenicke_distributions = {
         mus=(0.0689, 0.375, 4.29),
         sigmas=(10**0.245, 10**0.300, 10**0.291),
         Ns=(21.7, 0.186, 3.04e-4),
-        base=10.0,
     ),
     "Urban": MultiModeLognorm(
         mus=(0.00651, 0.00714, 0.0248),
         sigmas=(10.0**0.245, 10.0**0.666, 10.0**0.337),
         Ns=(9.93e4, 1.11e3, 3.64e4),
-        base=10.0,
     ),
     "Background": MultiModeLognorm(
         mus=(0.0036, 0.127, 0.259),
         sigmas=(10.0**0.645, 10.0**0.253, 10.0**0.425),
         Ns=(129.0, 59.7, 63.5),
-        base=10.0,
     ),
     "Maritime": MultiModeLognorm(
         mus=(0.0039, 0.133, 0.29),
         sigmas=(10.0**0.657, 10.0**0.210, 10.0**0.396),
         Ns=(133.0, 66.6, 3.06),
-        base=10.0,
     ),
     "Remote Continental": MultiModeLognorm(
         mus=(0.01, 0.058, 0.9),
         sigmas=(10.0**0.161, 10.0**0.217, 10.0**0.38),
         Ns=(3.2e3, 2.9e3, 0.3),
-        base=10.0,
     ),
     "Rural": MultiModeLognorm(
-        mus=(0.00739, 0.0269, 0.0149),
+        mus=(0.00739, 0.0269, 0.0419),
         sigmas=(10.0**0.225, 10.0**0.557, 10.0**0.266),
         Ns=(6.65e3, 147.0, 1990.0),
-        base=10.0,
     ),
 }
